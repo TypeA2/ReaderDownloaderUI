@@ -1,14 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
 
 namespace ReaderDownloaderUI {
+    internal struct ReaderEntry {
+        public string name;
+        public int index;
+        public string cover_url;
+    }
+
     public partial class MainForm {
         private const string login_page_url = "https://www.readeronline.leidenuniv.nl/customer/account/login/";
         private const string login_post_url = "https://www.readeronline.leidenuniv.nl/customer/account/loginPost/";
@@ -38,12 +42,6 @@ namespace ReaderDownloaderUI {
 
             FormUrlEncodedContent content = new FormUrlEncodedContent(form);
             await WebHelper.Client.PostAsync(login_post_url, content);
-        }
-
-        private struct ReaderEntry {
-            public string name;
-            public int index;
-            public string cover_url;
         }
 
         private static async Task<IEnumerable<ReaderEntry>> GetReaders() {
