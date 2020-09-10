@@ -1,9 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading;
 using Eto.Forms;
 using Eto.Drawing;
+using Newtonsoft.Json;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
 
 namespace ReaderDownloaderUI {
     public struct SettingsWrapper {
@@ -74,24 +81,27 @@ namespace ReaderDownloaderUI {
         }
 
         private readonly ListBox reader_list = new ListBox();
+        private readonly Button download_button = new Button { Text = "Download", Enabled = false };
 
-        private void DownloadForm(List<ReaderEntry> readers) {
+        private void DownloadForm(IEnumerable<ReaderEntry> readers) {
             ClientSize = new Size(960, 540);
             Resizable = true;
             Maximizable = true;
 
+
+            SizeChanged += (_, __) => reader_list.Height = ClientSize.Height - 48;
+            OnSizeChanged(null);
+            
             Content = new TableLayout {
                 Spacing = new Size(5, 5),
                 Padding = new Padding(10),
-                Rows = {
-                    reader_list,
-                    null
-                }
+                Rows = { reader_list, download_button, null }
             };
 
-            foreach (var reader in readers) {
-                reader_list.Items.Add($"{reader.name} ({reader.index})");
-            }
+            reader_list.DataStore = readers.Select(e => (object) e);
+
+            reader_list.SelectedKeyChanged += (_, __) => download_button.Enabled = true;
+            download_button.Click += DownloadButtonHandler;
         }
 
         private void Status(string msg = "") {
@@ -173,7 +183,63 @@ namespace ReaderDownloaderUI {
                 Status();
             }
 
-            DownloadForm(readers.ToList());
+            DownloadForm(readers);
+        }
+
+        private void DownloadButtonHandler(object obj, EventArgs args) {
+            ReaderEntry reader = (ReaderEntry) reader_list.SelectedValue;
+
+            SaveFileDialog dialog = new SaveFileDialog {
+                Title = "Save as...",
+                CheckFileExists = false,
+                Directory = new Uri(Utils.GetDownloadsFolder()),
+                FileName = $"{reader.name}.pdf".ValidPath(),
+                Filters = { new FileFilter("PDF Document", ".pdf") }
+            };
+
+            if (dialog.ShowDialog(Application.Instance.MainForm) == DialogResult.Ok) {
+                DownloadReader(reader, dialog.FileName);
+            }
+        }
+
+        struct PDFFragment {
+            public bool Success { get; set; }
+            public string File { get; set; }
+        }
+
+        private async void DownloadReader(ReaderEntry reader, string path) {
+            download_button.Enabled = false;
+            download_button.Text = "Retrieving pages...";
+
+            (uint page_count, string reader_code) = await GetPageCountAndReaderCode(reader.index);
+
+            download_button.Text = $"Downloading 0 / {page_count}";
+
+            PdfDocument output = new PdfDocument(path);
+
+            Uri default_referrer = WebHelper.Client.DefaultRequestHeaders.Referrer;
+            WebHelper.Client.DefaultRequestHeaders.Referrer =
+                new Uri("https://www.readeronline.leidenuniv.nl/reader/www/nodes/index/{reader.index}");
+
+            for (uint i = 1; i <= page_count; ++i) {
+                download_button.Text = $"Downloading {i} / {page_count}";
+                string url =
+                    $"https://www.readeronline.leidenuniv.nl/reader/www/nodes/nodes/get_pdf?reader_id={reader.index}&reader_code={reader_code}&page_number={i}";
+
+                PDFFragment result = JsonConvert.DeserializeObject<PDFFragment>(await WebHelper.Client.GetStringAsync(url));
+
+                MemoryStream stream = new MemoryStream(Convert.FromBase64String(result.File));
+
+                PdfDocument page = PdfReader.Open(stream, PdfDocumentOpenMode.Import);
+                output.AppendPdf(page);
+            }
+
+            WebHelper.Client.DefaultRequestHeaders.Referrer = default_referrer;
+
+            output.Close();
+
+            download_button.Text = "Download";
+            download_button.Enabled = true;
         }
     }
 }

@@ -11,6 +11,10 @@ namespace ReaderDownloaderUI {
         public string name;
         public int index;
         public string cover_url;
+
+        public override string ToString() {
+            return $"{name} ({index})";
+        }
     }
 
     public partial class MainForm {
@@ -73,6 +77,23 @@ namespace ReaderDownloaderUI {
             } catch (ArgumentNullException) {
                 return null;
             }
+        }
+
+        private static async Task<(uint, string)> GetPageCountAndReaderCode(int reader_id) {
+            string reader_url = $"https://www.readeronline.leidenuniv.nl/reader/www/nodes/index/{reader_id}";
+
+            Stream reader_page = await WebHelper.Client.GetStreamAsync(reader_url);
+            HtmlDocument doc = new HtmlDocument();
+            doc.Load(reader_page);
+
+            // span#page_count
+            const string page_count_xpath = "//span[@id=\"page_count\"]";
+
+            // input#reader_code
+            const string reader_code_xpath = "//input[@id=\"reader_code\"]";
+
+            return (UInt32.Parse(doc.DocumentNode.SelectSingleNode(page_count_xpath).GetDataAttribute("value").Value),
+                doc.DocumentNode.SelectSingleNode(reader_code_xpath).Attributes["value"].Value);
         }
     }
 }

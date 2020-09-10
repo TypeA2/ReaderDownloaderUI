@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Diagnostics;
 using Eto.Forms;
+
 namespace ReaderDownloaderUI.Desktop {
     internal class Program {
         [STAThread]
